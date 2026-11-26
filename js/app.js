@@ -483,6 +483,7 @@
       const gifW = parseInt(parts[0], 10) || 500;
       const gifH = parseInt(parts[1], 10) || 300;
       const fps = parseInt(document.getElementById('select-gif-fps').value, 10) || 24;
+      const maxColors = parseInt(document.getElementById('select-gif-colors').value, 10) || 256;
 
       const periodSec = NS.Motion.getPeriodSeconds(state.speed);
       const totalFrames = Math.max(18, Math.min(90, Math.round(periodSec * fps)));
@@ -508,10 +509,22 @@
       }
 
       try {
-        const blob = await NS.GifEncoder.encodeGif(frames, gifW, gifH, delayMs, function (p, msg) {
-          progressFill.style.width = Math.round(p * 100) + '%';
-          progressText.textContent = msg;
-        });
+        const blob = await NS.GifEncoder.encodeGif(
+          frames,
+          gifW,
+          gifH,
+          delayMs,
+          function (p, msg) {
+            progressFill.style.width = Math.round(p * 100) + '%';
+            progressText.textContent = msg;
+          },
+          { maxColors: maxColors }
+        );
+        const sizeText =
+          blob.size >= 1048576
+            ? (blob.size / 1048576).toFixed(2) + ' MB'
+            : Math.round(blob.size / 1024) + ' KB';
+        progressText.textContent = `GIF 编码完成！（${sizeText}）`;
         const slug = (state.text || 'neon').replace(/[^a-zA-Z0-9\u4e00-\u9fa5]+/g, '_').slice(0, 18) || 'neon';
         downloadBlob(blob, `neon_${slug}.gif`);
       } catch (err) {

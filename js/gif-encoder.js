@@ -3,7 +3,7 @@
 
   const NS = (global.NeonStudio = global.NeonStudio || {});
 
-  // 4x4 Bayer matrix normalized to [-0.5, +0.5] for smooth low-bit gradient dithering
+  // 4x4 Bayer matrix normalized to [-0.5, +0.5] for smooth mid-tone glow dithering
   const BAYER4 = [
     -0.46875, 0.03125, -0.34375, 0.15625,
     0.28125, -0.21875, 0.40625, -0.09375,
@@ -11,8 +11,22 @@
     0.46875, -0.03125, 0.34375, -0.15625
   ];
 
-  function buildMedianCutPalette(frames, maxColors) {
-    // Subsample pixels across all frames to represent every neon hue & dark gradient step
+  function resolvePaletteSpec(requestedColors) {
+    let colorBits = 8;
+    if (requestedColors <= 64) colorBits = 6;
+    else if (requestedColors <= 128) colorBits = 7;
+
+    const tableSize = 1 << colorBits;
+    // Reserve the last palette slot for lossless inter-frame transparency
+    return {
+      colorBits: colorBits,
+      tableSize: tableSize,
+      opaqueLimit: tableSize - 1,
+      transparentIdx: tableSize - 1
+    };
+  }
+
+  function buildMedianCutPalette(frames, maxColors, tableSize) {
     const sampleStep = Math.max(1, Math.floor((frames[0].data.length / 4) / 2800));
     const samples = [];
     for (let f = 0; f < frames.length; f++) {
@@ -63,8 +77,8 @@
       boxes.push(createBox(box.pts.slice(mid)));
     }
 
-    const palette = new Uint8Array(256 * 3);
-    const paletteCount = Math.min(256, boxes.length);
+    const palette = new Uint8Array(tableSize * 3);
+    const paletteCount = Math.min(maxColors, boxes.length);
     for (let i = 0; i < paletteCount; i++) {
       const pts = boxes[i].pts;
       let sr = 0, sg = 0, sb = 0;
@@ -81,10 +95,14 @@
     return { palette: palette, count: paletteCount };
   }
 
-  function createColorMapper(palette, count) {
+  function createColorMapper(palette, count, bgRgb) {
     // 15-bit RGB cache (32 x 32 x 32)
     const lut = new Int16Array(32768);
     lut.fill(-1);
+
+    const bgR = bgRgb[0];
+    const bgG = bgRgb[1];
+    const bgB = bgRgb[2];
 
     function nearest(r, g, b) {
       const qr = r >> 3;
@@ -113,41 +131,110 @@
     return function mapFrame(imageData, width, height) {
       const src = imageData.data;
       const out = new Uint8Array(width * height);
-      const ditherAmp = 14;
       for (let y = 0; y < height; y++) {
         const rowOffset = (y & 3) * 4;
         for (let x = 0; x < width; x++) {
           const idx = (y * width + x) * 4;
-          const b = BAYER4[rowOffset + (x & 3)] * ditherAmp;
-          const r = Math.max(0, Math.min(255, (src[idx] + b) | 0));
-          const g = Math.max(0, Math.min(255, (src[idx + 1] + b) | 0));
-          const bl = Math.max(0, Math.min(255, (src[idx + 2] + b) | 0));
-          out[y * width + x] = nearest(r, g, bl);
+          const r0 = src[idx];
+          const g0 = src[idx + 1];
+          const b0 = src[idx + 2];
+
+          const bgDist = Math.abs(r0 - bgR) + Math.abs(g0 - bgG) + Math.abs(b0 - bgB);
+          const luma = (r0 * 77 + g0 * 150 + b0 * 29) >> 8;
+
+          // Keep flat dark backgrounds and pure white tube cores noise-free for clean LZW runs
+          let amp = 0;
+          if (bgDist >= 14 && luma <= 242) {
+            const darkFade = Math.min(1, (bgDist - 14) / 24);
+            const brightFade = luma > 210 ? (242 - luma) / 32 : 1;
+            amp = 6 * darkFade * brightFade;
+          }
+
+          if (amp > 0) {
+            const b = BAYER4[rowOffset + (x & 3)] * amp;
+            const r = Math.max(0, Math.min(255, (r0 + b) | 0));
+            const g = Math.max(0, Math.min(255, (g0 + b) | 0));
+            const bl = Math.max(0, Math.min(255, (b0 + b) | 0));
+            out[y * width + x] = nearest(r, g, bl);
+          } else {
+            out[y * width + x] = nearest(r0, g0, b0);
+          }
         }
       }
       return out;
     };
   }
 
-  function lzwEncode(indices) {
-    const CLEAR = 256;
-    const EOI = 257;
+  function buildDeltaFrame(indexed, prevIndexed, width, height, transparentIdx) {
+    let minX = width;
+    let minY = height;
+    let maxX = -1;
+    let maxY = -1;
+
+    for (let y = 0; y < height; y++) {
+      const rowStart = y * width;
+      for (let x = 0; x < width; x++) {
+        const p = rowStart + x;
+        if (indexed[p] !== prevIndexed[p]) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+
+    if (maxX < minX) {
+      return {
+        left: 0,
+        top: 0,
+        width: 1,
+        height: 1,
+        indices: new Uint8Array([transparentIdx])
+      };
+    }
+
+    const subW = maxX - minX + 1;
+    const subH = maxY - minY + 1;
+    const subIndices = new Uint8Array(subW * subH);
+
+    for (let row = 0; row < subH; row++) {
+      const srcRow = (minY + row) * width + minX;
+      const dstRow = row * subW;
+      for (let col = 0; col < subW; col++) {
+        const p = srcRow + col;
+        subIndices[dstRow + col] =
+          indexed[p] === prevIndexed[p] ? transparentIdx : indexed[p];
+      }
+    }
+
+    return {
+      left: minX,
+      top: minY,
+      width: subW,
+      height: subH,
+      indices: subIndices
+    };
+  }
+
+  function lzwEncode(indices, minCodeSize) {
+    const CLEAR = 1 << minCodeSize;
+    const EOI = CLEAR + 1;
     const HASH_SIZE = 16384; // power of 2 > 4096
     const HASH_MASK = HASH_SIZE - 1;
 
     const hashKeys = new Int32Array(HASH_SIZE);
     const hashVals = new Uint16Array(HASH_SIZE);
 
-    let nextCode = 258;
-    let codeSize = 9;
+    let nextCode = CLEAR + 2;
+    let codeSize = minCodeSize + 1;
 
     function resetDict() {
       hashKeys.fill(-1);
-      nextCode = 258;
-      codeSize = 9;
+      nextCode = CLEAR + 2;
+      codeSize = minCodeSize + 1;
     }
 
-    // Output chunks
     const bytes = [];
     let bitAcc = 0;
     let bitCount = 0;
@@ -208,7 +295,7 @@
     }
 
     // Wrap into GIF sub-blocks (max 255 bytes each)
-    const out = [8]; // LZW minimum code size
+    const out = [minCodeSize];
     for (let offset = 0; offset < bytes.length; offset += 255) {
       const len = Math.min(255, bytes.length - offset);
       out.push(len);
@@ -224,29 +311,44 @@
     arr.push(val & 0xff, (val >> 8) & 0xff);
   }
 
+  function makeImageDescriptor(left, top, width, height) {
+    const desc = [0x2c];
+    writeU16(desc, left);
+    writeU16(desc, top);
+    writeU16(desc, width);
+    writeU16(desc, height);
+    desc.push(0x00);
+    return new Uint8Array(desc);
+  }
+
   function yieldFrame() {
     return new Promise(function (resolve) {
       setTimeout(resolve, 0);
     });
   }
 
-  async function encodeGif(frames, width, height, delayMs, onProgress) {
+  async function encodeGif(frames, width, height, delayMs, onProgress, options) {
     if (!frames || !frames.length) {
       throw new Error('No frames to encode');
     }
+    const opts = options || {};
+    const spec = resolvePaletteSpec(opts.maxColors || 256);
+
     if (onProgress) onProgress(0.1, '正在分析色彩并生成调色板...');
     await yieldFrame();
 
-    const quant = buildMedianCutPalette(frames, 256);
-    const mapFrame = createColorMapper(quant.palette, quant.count);
+    const quant = buildMedianCutPalette(frames, spec.opaqueLimit, spec.tableSize);
+    const bgData = frames[0].data;
+    const mapFrame = createColorMapper(quant.palette, quant.count, [bgData[0], bgData[1], bgData[2]]);
 
     const header = [];
     // "GIF89a"
     header.push(0x47, 0x49, 0x46, 0x38, 0x39, 0x61);
     writeU16(header, width);
     writeU16(header, height);
-    // Global Color Table Flag (1), Color Res (7), Sort (0), Size (7 -> 256 colors)
-    header.push(0xf7, 0x00, 0x00);
+    // Global Color Table Flag (1), Color Res (colorBits - 1), Sort (0), Size (colorBits - 1)
+    const packed = 0x80 | ((spec.colorBits - 1) << 4) | (spec.colorBits - 1);
+    header.push(packed, 0x00, 0x00);
 
     const chunks = [new Uint8Array(header), quant.palette];
 
@@ -260,22 +362,38 @@
     );
 
     const delayCs = Math.max(2, Math.round(delayMs / 10));
-    const gce = new Uint8Array([
+    // Disposal 1 ("do not dispose") so subsequent delta frames overlay cleanly
+    const gceOpaque = new Uint8Array([
       0x21, 0xf9, 0x04, 0x04,
       delayCs & 0xff, (delayCs >> 8) & 0xff,
       0x00, 0x00
     ]);
+    const gceDelta = new Uint8Array([
+      0x21, 0xf9, 0x04, 0x05,
+      delayCs & 0xff, (delayCs >> 8) & 0xff,
+      spec.transparentIdx, 0x00
+    ]);
 
-    const imgDesc = [0x2c, 0x00, 0x00, 0x00, 0x00];
-    writeU16(imgDesc, width);
-    writeU16(imgDesc, height);
-    imgDesc.push(0x00);
-    const imgDescBytes = new Uint8Array(imgDesc);
+    let prevIndexed = null;
 
     for (let i = 0; i < frames.length; i++) {
       const indexed = mapFrame(frames[i], width, height);
-      const compressed = lzwEncode(indexed);
-      chunks.push(gce, imgDescBytes, compressed);
+
+      if (i === 0) {
+        // Keyframe 0 overwrites full canvas so loop restarts cleanly with zero ghosting
+        const compressed = lzwEncode(indexed, spec.colorBits);
+        chunks.push(gceOpaque, makeImageDescriptor(0, 0, width, height), compressed);
+      } else {
+        const delta = buildDeltaFrame(indexed, prevIndexed, width, height, spec.transparentIdx);
+        const compressed = lzwEncode(delta.indices, spec.colorBits);
+        chunks.push(
+          gceDelta,
+          makeImageDescriptor(delta.left, delta.top, delta.width, delta.height),
+          compressed
+        );
+      }
+
+      prevIndexed = indexed;
 
       if (onProgress) {
         const p = 0.2 + 0.78 * ((i + 1) / frames.length);

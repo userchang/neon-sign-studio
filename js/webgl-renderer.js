@@ -213,6 +213,7 @@
     uniform sampler2D uBloom3;
     uniform vec3 uBgColor;
     uniform float uBloomIntensity;
+    uniform float uDither;
 
     void main() {
       vec3 sceneCol = texture2D(uSceneTex, vUv).rgb;
@@ -234,9 +235,9 @@
       vec3 totalLin = bgLin + mappedLight;
       vec3 srgb = pow(clamp(totalLin, 0.0, 1.0), vec3(1.0 / 2.2));
 
-      // Subtle dither to eliminate dark plum/magenta gradient banding
+      // Subtle dither to eliminate dark plum/magenta gradient banding in live preview
       float n = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
-      srgb += (n - 0.5) / 255.0;
+      srgb += ((n - 0.5) / 255.0) * uDither;
 
       gl_FragColor = vec4(clamp(srgb, 0.0, 1.0), 1.0);
     }
@@ -365,7 +366,8 @@
       uBloom2: gl.getUniformLocation(this.compProg, 'uBloom2'),
       uBloom3: gl.getUniformLocation(this.compProg, 'uBloom3'),
       uBgColor: gl.getUniformLocation(this.compProg, 'uBgColor'),
-      uBloomIntensity: gl.getUniformLocation(this.compProg, 'uBloomIntensity')
+      uBloomIntensity: gl.getUniformLocation(this.compProg, 'uBloomIntensity'),
+      uDither: gl.getUniformLocation(this.compProg, 'uDither')
     };
   };
 
@@ -685,6 +687,7 @@
       this.compLoc.uBloomIntensity,
       (state.bloom !== undefined ? state.bloom : 1.15) * flicker
     );
+    gl.uniform1f(this.compLoc.uDither, isExport ? 0.0 : 1.0);
 
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.disableVertexAttribArray(this.compLoc.aPos);

@@ -371,6 +371,14 @@
                 </select>
               </label>
             </div>
+            <label class="select-field">
+              <span>色彩精度（影响体积）</span>
+              <select id="select-gif-colors">
+                <option value="256" selected>256 色 (原画无损)</option>
+                <option value="128">128 色 (均衡推荐)</option>
+                <option value="64">64 色 (极致小巧)</option>
+              </select>
+            </label>
             <button type="button" class="primary-btn" id="btn-export-gif">生成并下载 GIF 动图</button>
             <div class="progress-wrap hidden" id="gif-progress-wrap">
               <div class="progress-bar"><div class="progress-fill" id="gif-progress-fill"></div></div>

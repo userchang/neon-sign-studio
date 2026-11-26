@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Neon Sign Studio · 3D 无限镜面霓虹灯牌生成器</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <!-- Main Interactive Preview Stage -->
+    <main class="stage" id="stage">
+      <canvas id="neon-canvas"></canvas>
+
+      <!-- Top-Left Floating Brand & Hint -->
+      <div class="stage-badge" id="stage-badge">
+        <span class="badge-dot"></span>
+        <span class="badge-title">NEON MIRROR STUDIO</span>
+        <span class="badge-hint">拖拽画面可自由调整视角</span>
+      </div>
+
+      <!-- Bottom Floating Quick Controls -->
+      <div class="stage-hud" id="stage-hud">
+        <button type="button" class="hud-btn" id="btn-play-pause" title="播放 / 暂停 (空格)">
+          <svg id="icon-pause" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+            <rect x="6" y="5" width="4" height="14" rx="1.2"></rect>
+            <rect x="14" y="5" width="4" height="14" rx="1.2"></rect>
+          </svg>
+          <svg id="icon-play" class="hidden" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+            <path d="M7 5.2v13.6c0 .8.9 1.3 1.6.9l10.8-6.8c.6-.4.6-1.4 0-1.8L8.6 4.3C7.9 3.9 7 4.4 7 5.2z"></path>
+          </svg>
+          <span id="label-play-pause">暂停</span>
+        </button>
+
+        <button type="button" class="hud-btn" id="btn-randomize" title="随机生成灵感组合">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="16 3 21 3 21 8"></polyline>
+            <line x1="4" y1="20" x2="21" y2="3"></line>
+            <polyline points="21 16 21 21 16 21"></polyline>
+            <line x1="15" y1="15" x2="21" y2="21"></line>
+            <line x1="4" y1="4" x2="9" y2="9"></line>
+          </svg>
+          <span>随机灵感</span>
+        </button>
+
+        <button type="button" class="hud-btn" id="btn-quick-png" title="快速保存当前高清 PNG">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+            <circle cx="12" cy="13" r="4"></circle>
+          </svg>
+          <span>截图</span>
+        </button>
+
+        <button type="button" class="hud-btn" id="btn-zen-mode" title="纯净展示 / 展开控制面板 (H)">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+            <line x1="15" y1="3" x2="15" y2="21"></line>
+          </svg>
+          <span id="label-zen-mode">收起面板</span>
+        </button>
+      </div>
+
+      <!-- Mobile / Collapsed Open Panel Button -->
+      <button type="button" class="floating-open-btn hidden" id="btn-open-panel" title="展开控制面板">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+        <span>设置</span>
+      </button>
+
+      <!-- WebGL Error Fallback Notice -->
+      <div class="webgl-error hidden" id="webgl-error">
+        <h3>无法初始化 WebGL 渲染器</h3>
+        <p>请确认浏览器已启用硬件加速或 WebGL 支持。</p>
+      </div>
+    </main>
+
+    <!-- Right Control Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <header class="sidebar-header">
+        <div class="brand-lockup">
+          <h1>霓虹灯牌工坊</h1>
+          <p>3D 无限镜面 · 实时定制与动图导出</p>
+        </div>
+        <button type="button" class="icon-btn" id="btn-reset" title="恢复默认设置">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="1 4 1 10 7 10"></polyline>
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+          </svg>
+        </button>
+      </header>
+
+      <!-- Navigation Tabs -->
+      <nav class="tab-bar" role="tablist">
+        <button type="button" class="tab-btn active" data-tab="text" role="tab" aria-selected="true">文字</button>
+        <button type="button" class="tab-btn" data-tab="color" role="tab" aria-selected="false">光效</button>
+        <button type="button" class="tab-btn" data-tab="motion" role="tab" aria-selected="false">运动</button>
+        <button type="button" class="tab-btn" data-tab="export" role="tab" aria-selected="false">导出</button>
+      </nav>
+
+      <!-- Tab Panels -->
+      <div class="sidebar-body">
+        <!-- TAB 1: TEXT & SIGN -->
+        <section class="tab-panel active" id="panel-text">
+          <div class="control-group">
+            <label class="control-label" for="input-text">
+              <span>灯牌文字内容</span>
+              <span class="sub-hint">支持中英文 / 换行 / 符号</span>
+            </label>
+            <textarea id="input-text" rows="2" maxlength="48" placeholder="输入文字，回车换行...">NEON</textarea>
+            <div class="quick-phrases">
+              <button type="button" class="chip-btn" data-phrase="NEON">NEON</button>
+              <button type="button" class="chip-btn" data-phrase="OPEN">OPEN</button>
+              <button type="button" class="chip-btn" data-phrase="CYBER">CYBER</button>
+              <button type="button" class="chip-btn" data-phrase="夜未眠">夜未眠</button>
+              <button type="button" class="chip-btn" data-phrase="STAY&#10;WILD">STAY WILD</button>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <label class="control-label">字体风格</label>
+            <div class="seg-grid cols-2" id="group-font">
+              <button type="button" class="seg-btn active" data-value="classic">经典霓虹</button>
+              <button type="button" class="seg-btn" data-value="rounded">圆润几何</button>
+              <button type="button" class="seg-btn" data-value="script">手写霓虹</button>
+              <button type="button" class="seg-btn" data-value="retro">复古等宽</button>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <label class="control-label">灯管形态</label>
+            <div class="seg-grid cols-3" id="group-tube-style">
+              <button type="button" class="seg-btn active" data-value="hollow">空心灯管</button>
+              <button type="button" class="seg-btn" data-value="solid">实心灯管</button>
+              <button type="button" class="seg-btn" data-value="double">双层灯管</button>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <label class="control-label">边框形状</label>
+            <div class="seg-grid cols-3" id="group-frame">
+              <button type="button" class="seg-btn active" data-value="rounded">圆角矩形</button>
+              <button type="button" class="seg-btn" data-value="pill">胶囊形</button>
+              <button type="button" class="seg-btn" data-value="double">双线框</button>
+              <button type="button" class="seg-btn" data-value="hex">切角牌</button>
+              <button type="button" class="seg-btn" data-value="underline">霓虹底线</button>
+              <button type="button" class="seg-btn" data-value="none">无边框</button>
+            </div>
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>整体尺寸</span>
+              <span class="slider-val" id="val-font-size">0.60×</span>
+            </div>
+            <input type="range" id="range-font-size" min="0.3" max="1.2" step="0.02" value="0.6" />
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>字距调节</span>
+              <span class="slider-val" id="val-letter-spacing">0.12</span>
+            </div>
+            <input type="range" id="range-letter-spacing" min="-0.04" max="0.4" step="0.01" value="0.12" />
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>灯管粗细</span>
+              <span class="slider-val" id="val-tube-width">1.00×</span>
+            </div>
+            <input type="range" id="range-tube-width" min="0.55" max="1.65" step="0.05" value="1.0" />
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>边框留白</span>
+              <span class="slider-val" id="val-frame-pad">1.00×</span>
+            </div>
+            <input type="range" id="range-frame-pad" min="0.5" max="1.8" step="0.05" value="1.0" />
+          </div>
+        </section>
+
+        <!-- TAB 2: COLOR & MIRROR -->
+        <section class="tab-panel" id="panel-color">
+          <div class="control-group">
+            <label class="control-label">精选霓虹配色</label>
+            <div class="swatch-grid" id="color-presets"></div>
+          </div>
+
+          <div class="control-group">
+            <label class="control-label">色彩模式</label>
+            <div class="seg-grid cols-2" id="group-color-mode">
+              <button type="button" class="seg-btn active" data-value="monochrome">单色景深</button>
+              <button type="button" class="seg-btn" data-value="duotone">双色渐变</button>
+              <button type="button" class="seg-btn" data-value="depthShift">景深变色</button>
+              <button type="button" class="seg-btn" data-value="rainbow">流光彩虹</button>
+            </div>
+          </div>
+
+          <div class="color-row">
+            <label class="color-picker-item">
+              <span>主光色</span>
+              <input type="color" id="input-primary-color" value="#ff3ec8" />
+            </label>
+            <label class="color-picker-item">
+              <span>副色 / 景深</span>
+              <input type="color" id="input-secondary-color" value="#9d1486" />
+            </label>
+            <label class="color-picker-item">
+              <span>背景色</span>
+              <input type="color" id="input-bg-color" value="#150818" />
+            </label>
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>镜面层数 (Infinity Layers)</span>
+              <span class="slider-val" id="val-layers">8 层</span>
+            </div>
+            <input type="range" id="range-layers" min="1" max="16" step="1" value="8" />
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>镜面深邃度 (层间距)</span>
+              <span class="slider-val" id="val-layer-spacing">0.15</span>
+            </div>
+            <input type="range" id="range-layer-spacing" min="0.04" max="0.32" step="0.01" value="0.15" />
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>倒影衰减</span>
+              <span class="slider-val" id="val-decay">0.78</span>
+            </div>
+            <input type="range" id="range-decay" min="0.50" max="0.95" step="0.01" value="0.78" />
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>辉光强度 (Bloom)</span>
+              <span class="slider-val" id="val-bloom">1.15</span>
+            </div>
+            <input type="range" id="range-bloom" min="0.20" max="2.20" step="0.05" value="1.15" />
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>灯芯亮度</span>
+              <span class="slider-val" id="val-core">0.90</span>
+            </div>
+            <input type="range" id="range-core" min="0.10" max="1.60" step="0.05" value="0.90" />
+          </div>
+
+          <div class="control-group">
+            <label class="control-label">电流闪烁效果</label>
+            <div class="seg-grid cols-2" id="group-flicker">
+              <button type="button" class="seg-btn active" data-value="steady">常亮稳定</button>
+              <button type="button" class="seg-btn" data-value="breathe">柔和呼吸</button>
+              <button type="button" class="seg-btn" data-value="buzz">接触不良</button>
+              <button type="button" class="seg-btn" data-value="glitch">赛博故障</button>
+            </div>
+          </div>
+
+          <label class="toggle-row">
+            <span>空气微尘光斑</span>
+            <input type="checkbox" id="toggle-dust" checked />
+            <span class="toggle-track"></span>
+          </label>
+        </section>
+
+        <!-- TAB 3: MOTION -->
+        <section class="tab-panel" id="panel-motion">
+          <div class="control-group">
+            <label class="control-label">3D 运动方式</label>
+            <div class="motion-grid" id="group-motion">
+              <button type="button" class="motion-card active" data-value="swing">
+                <span class="motion-name">左右摇摆</span>
+                <span class="motion-desc">原版同款水平往复</span>
+              </button>
+              <button type="button" class="motion-card" data-value="figure8">
+                <span class="motion-name">8 字漂浮</span>
+                <span class="motion-desc">立体交叉优雅轨迹</span>
+              </button>
+              <button type="button" class="motion-card" data-value="nod">
+                <span class="motion-name">上下俯仰</span>
+                <span class="motion-desc">纵深抬头低头视角</span>
+              </button>
+              <button type="button" class="motion-card" data-value="spin360">
+                <span class="motion-name">360° 旋转</span>
+                <span class="motion-desc">全方位无缝自转</span>
+              </button>
+              <button type="button" class="motion-card" data-value="hover">
+                <span class="motion-name">自由悬浮</span>
+                <span class="motion-desc">多轴失重漂浮</span>
+              </button>
+              <button type="button" class="motion-card" data-value="pulse">
+                <span class="motion-name">节拍律动</span>
+                <span class="motion-desc">脉冲缩放呼吸感</span>
+              </button>
+              <button type="button" class="motion-card" data-value="pointer">
+                <span class="motion-name">鼠标跟随</span>
+                <span class="motion-desc">随光标视线偏转</span>
+              </button>
+              <button type="button" class="motion-card" data-value="static">
+                <span class="motion-name">静止展示</span>
+                <span class="motion-desc">锁定斜角或拖拽定格</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>运动速度</span>
+              <span class="slider-val" id="val-speed">1.00×</span>
+            </div>
+            <input type="range" id="range-speed" min="0.2" max="2.6" step="0.05" value="1.0" />
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>摆动幅度</span>
+              <span class="slider-val" id="val-amplitude">1.00×</span>
+            </div>
+            <input type="range" id="range-amplitude" min="0.1" max="1.8" step="0.05" value="1.0" />
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-header">
+              <span>透视广角 (FOV)</span>
+              <span class="slider-val" id="val-fov">42°</span>
+            </div>
+            <input type="range" id="range-fov" min="22" max="72" step="1" value="42" />
+          </div>
+
+          <div class="hint-card">
+            <p><strong>交互提示：</strong>在左侧画布按住鼠标左键（或单指触摸）拖拽，可以随时叠加手动 3D 视角。</p>
+            <button type="button" class="small-outline-btn" id="btn-reset-view">回正视角</button>
+          </div>
+        </section>
+
+        <!-- TAB 4: EXPORT -->
+        <section class="tab-panel" id="panel-export">
+          <div class="export-card">
+            <h3>导出透明 / 深色静帧图 (PNG)</h3>
+            <p>按当前画布分辨率直接导出高清静态截图。</p>
+            <button type="button" class="primary-btn" id="btn-export-png">下载 PNG 截图</button>
+          </div>
+
+          <div class="export-card">
+            <h3>导出无缝循环动图 (GIF)</h3>
+            <p>自动对齐一个完整运动周期，生成可直接发 X / 社交平台的循环 GIF。</p>
+            <div class="export-options">
+              <label class="select-field">
+                <span>分辨率</span>
+                <select id="select-gif-size">
+                  <option value="500x300" selected>500 × 300 (经典同款)</option>
+                  <option value="640x384">640 × 384 (高清横屏)</option>
+                  <option value="480x480">480 × 480 (正方形)</option>
+                  <option value="800x480">800 × 480 (大图清晰)</option>
+                </select>
+              </label>
+              <label class="select-field">
+                <span>帧率</span>
+                <select id="select-gif-fps">
+                  <option value="18">18 FPS (轻量)</option>
+                  <option value="24" selected>24 FPS (流畅推荐)</option>
+                  <option value="30">30 FPS (高帧率)</option>
+                </select>
+              </label>
+            </div>
+            <button type="button" class="primary-btn" id="btn-export-gif">生成并下载 GIF 动图</button>
+            <div class="progress-wrap hidden" id="gif-progress-wrap">
+              <div class="progress-bar"><div class="progress-fill" id="gif-progress-fill"></div></div>
+              <span class="progress-text" id="gif-progress-text">准备编码...</span>
+            </div>
+          </div>
+
+          <div class="export-card">
+            <h3>录制高清循环视频 (WebM)</h3>
+            <p>利用浏览器硬件流录制 1 个完整运动周期的高帧率 WebM 视频。</p>
+            <button type="button" class="secondary-btn" id="btn-export-webm">录制并下载 WebM</button>
+            <span class="progress-text hidden" id="webm-status-text"></span>
+          </div>
+        </section>
+      </div>
+    </aside>
+  </div>
+
+  <script defer src="js/glyphs.js"></script>
+  <script defer src="js/sign-texture.js"></script>
+  <script defer src="js/motion.js"></script>
+  <script defer src="js/webgl-renderer.js"></script>
+  <script defer src="js/gif-encoder.js"></script>
+  <script defer src="js/app.js"></script>
+</body>
+</html>
